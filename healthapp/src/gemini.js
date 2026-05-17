@@ -1,3 +1,4 @@
+// v2
 const BASE = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent'
 
 async function askGemini(prompt) {
