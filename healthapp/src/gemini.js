@@ -1,8 +1,7 @@
 // Direct Gemini API call from browser
 // Works because Gemini API supports CORS
 
-const BASE = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent'
-
+const BASE = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent'
 async function askGemini(prompt) {
   // API key is injected at build time by Vite
   const API_KEY = import.meta.env.VITE_GEMINI_API_KEY
