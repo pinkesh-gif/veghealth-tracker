@@ -695,10 +695,7 @@ export default function App(){
       }
     }catch(e){
       setBusy(false)
-      const msg=e.message?.includes('API_KEY_MISSING')?'⚠️ API Key missing in Vercel':
-                e.message?.includes('GEMINI_ERROR')?e.message.replace('GEMINI_ERROR: ',''):
-                e.message?.includes('NETWORK')?'Network failed — check WiFi':
-                e.message||'Unknown error'
+      const msg = e.message || 'Unknown error — try again'
       toast(msg,true)
     }
   },[busy,logs,tots,goals,profile,toast])
