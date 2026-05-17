@@ -1,17 +1,15 @@
-// Vercel serverless function — keeps API key safe on server side
-export default async function handler(req, res) {
-  // Allow cross-origin requests from your app
+// CommonJS format — most compatible with Vercel
+module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
-
   if (req.method === 'OPTIONS') { res.status(200).end(); return }
   if (req.method !== 'POST') { res.status(405).json({ error: 'Method not allowed' }); return }
 
   const API_KEY = process.env.VITE_GEMINI_API_KEY
-  if (!API_KEY) { res.status(500).json({ error: 'API key not configured on server' }); return }
+  if (!API_KEY) { res.status(500).json({ error: 'API key not set in Vercel environment variables' }); return }
 
-  const { prompt } = req.body
+  const { prompt } = req.body || {}
   if (!prompt) { res.status(400).json({ error: 'No prompt provided' }); return }
 
   try {
@@ -28,11 +26,12 @@ export default async function handler(req, res) {
     )
     const data = await response.json()
     if (!response.ok) {
-      res.status(response.status).json({ error: data?.error?.message || 'Gemini error' }); return
+      res.status(response.status).json({ error: data?.error?.message || 'Gemini API error' })
+      return
     }
     const text = data.candidates?.[0]?.content?.parts?.[0]?.text || ''
     res.status(200).json({ text })
   } catch (e) {
-    res.status(500).json({ error: e.message })
+    res.status(500).json({ error: 'Server error: ' + e.message })
   }
 }
