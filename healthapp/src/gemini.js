@@ -19,7 +19,7 @@ async function askAI(prompt) {
       'X-Title': 'VegHealth Tracker'
     },
     body: JSON.stringify({
-      model: 'google/gemma-3-27b-it:free',
+      model: 'deepseek/deepseek-r1:free',
       messages: [{ role: 'user', content: prompt }],
       temperature: 0.1,
       max_tokens: 1024
