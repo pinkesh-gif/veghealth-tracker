@@ -89,3 +89,4 @@ Day total: ${Math.round(dayTotals.calories||0)}/${goals.calories} cal, ${Math.ro
 Plain text only. Warm and friendly tone.`
   return await askAI(prompt)
 }
+ 
