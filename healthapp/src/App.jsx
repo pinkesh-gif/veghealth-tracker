@@ -2,9 +2,8 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { BarChart, Bar, XAxis, Tooltip, ResponsiveContainer, Cell, AreaChart, Area } from 'recharts'
 import { parseFoodEntry, parseExerciseEntry, parseWeightEntry, getMealOpinion } from './gemini'
 import { store } from './storage'
-import { NUTR, ZERO, calcGoals } from './goals'
+import { NUTR, ZERO, calcGoals, getDeficiencies, FOOD_TIPS } from './goals'
 
-// ─── Palette ──────────────────────────────────────────────────────
 const BG='#000',CARD='#1C1C1E',CARD2='#2C2C2E',CARD3='#3A3A3C'
 const RED='#FF375F',GRN='#30D158',ORG='#FF9F0A',BLU='#32ADE6'
 const PUR='#BF5AF2',YEL='#FFD60A',CYN='#5AC8FA'
@@ -19,7 +18,7 @@ const fmtN=(v,u)=>{
   return`${(+v).toFixed(1)}${u}`
 }
 
-// ─── Shared UI Components (defined OUTSIDE App to prevent remount) ─
+// ─── Shared UI ─────────────────────────────────────────────────────
 const Card=({children,mb=14,p=20})=>(
   <div style={{background:CARD,borderRadius:22,padding:p,marginBottom:mb}}>{children}</div>
 )
@@ -71,78 +70,53 @@ const MicroTile=({n,value,goal})=>{
   )
 }
 
-// ─── Time Picker Modal ─────────────────────────────────────────────
+// ─── Time Picker ───────────────────────────────────────────────────
 const TimePicker=({onConfirm,onCancel})=>{
   const now=new Date()
   const pad=n=>String(n).padStart(2,'0')
   const [h,setH]=useState(now.getHours())
   const [m,setM]=useState(now.getMinutes())
   const [useNow,setUseNow]=useState(true)
-
   const confirm=()=>{
     if(useNow){onConfirm(new Date());return}
-    const d=new Date()
-    d.setHours(h,m,0,0)
-    onConfirm(d)
+    const d=new Date();d.setHours(h,m,0,0);onConfirm(d)
   }
-
   return(
     <div style={{position:'fixed',inset:0,zIndex:500,display:'flex',flexDirection:'column',justifyContent:'flex-end'}}>
       <div onClick={onCancel} style={{position:'absolute',inset:0,background:'rgba(0,0,0,0.6)',backdropFilter:'blur(4px)'}}/>
       <div style={{position:'relative',background:CARD,borderRadius:'24px 24px 0 0',padding:'24px 20px 40px',zIndex:1}}>
         <div style={{width:36,height:4,background:CARD3,borderRadius:2,margin:'0 auto 20px'}}/>
         <div style={{color:TXT,fontSize:17,fontWeight:700,marginBottom:6}}>When did you have this?</div>
-        <div style={{color:TS,fontSize:13,marginBottom:20}}>Choose the time for this log entry</div>
-
-        {/* Now vs Custom */}
         <div style={{display:'flex',background:CARD2,borderRadius:12,padding:4,marginBottom:20,gap:4}}>
           {[['now','⚡ Right Now'],['custom','🕐 Custom Time']].map(([id,lb])=>(
             <button key={id} onClick={()=>setUseNow(id==='now')}
-              style={{flex:1,padding:'10px 4px',borderRadius:9,border:'none',cursor:'pointer',
-                background:useNow===(id==='now')?CARD3:'transparent',
-                color:useNow===(id==='now')?TXT:TS,fontWeight:useNow===(id==='now')?700:400,
-                fontSize:14,fontFamily:'inherit',transition:'all .15s'}}>
+              style={{flex:1,padding:'10px 4px',borderRadius:9,border:'none',cursor:'pointer',background:useNow===(id==='now')?CARD3:'transparent',color:useNow===(id==='now')?TXT:TS,fontWeight:useNow===(id==='now')?700:400,fontSize:14,fontFamily:'inherit'}}>
               {lb}
             </button>
           ))}
         </div>
-
-        {/* Current time display */}
         {useNow&&(
           <div style={{background:CARD2,borderRadius:14,padding:'16px 20px',textAlign:'center',marginBottom:20}}>
-            <div style={{color:GRN,fontSize:36,fontWeight:700,letterSpacing:2}}>
-              {pad(now.getHours())}:{pad(now.getMinutes())}
-            </div>
-            <div style={{color:TS,fontSize:12,marginTop:4}}>
-              {now.toLocaleDateString('en',{weekday:'long',month:'short',day:'numeric'})}
-            </div>
+            <div style={{color:GRN,fontSize:36,fontWeight:700,letterSpacing:2}}>{pad(now.getHours())}:{pad(now.getMinutes())}</div>
+            <div style={{color:TS,fontSize:12,marginTop:4}}>{now.toLocaleDateString('en',{weekday:'long',month:'short',day:'numeric'})}</div>
           </div>
         )}
-
-        {/* Custom time picker */}
         {!useNow&&(
           <div style={{background:CARD2,borderRadius:14,padding:'20px',marginBottom:20}}>
             <div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:16}}>
-              {/* Hours */}
               <div style={{textAlign:'center'}}>
-                <button onClick={()=>setH(p=>(p+1)%24)}
-                  style={{display:'block',width:'100%',background:'none',border:'none',color:TS,fontSize:22,cursor:'pointer',padding:'4px 0'}}>▲</button>
+                <button onClick={()=>setH(p=>(p+1)%24)} style={{display:'block',width:'100%',background:'none',border:'none',color:TS,fontSize:22,cursor:'pointer',padding:'4px 0'}}>▲</button>
                 <div style={{color:TXT,fontSize:44,fontWeight:700,minWidth:70,textAlign:'center'}}>{pad(h)}</div>
-                <button onClick={()=>setH(p=>(p-1+24)%24)}
-                  style={{display:'block',width:'100%',background:'none',border:'none',color:TS,fontSize:22,cursor:'pointer',padding:'4px 0'}}>▼</button>
+                <button onClick={()=>setH(p=>(p-1+24)%24)} style={{display:'block',width:'100%',background:'none',border:'none',color:TS,fontSize:22,cursor:'pointer',padding:'4px 0'}}>▼</button>
                 <div style={{color:TT,fontSize:11,marginTop:4}}>Hour</div>
               </div>
               <div style={{color:TXT,fontSize:40,fontWeight:300,marginBottom:10}}>:</div>
-              {/* Minutes */}
               <div style={{textAlign:'center'}}>
-                <button onClick={()=>setM(p=>(p+5)%60)}
-                  style={{display:'block',width:'100%',background:'none',border:'none',color:TS,fontSize:22,cursor:'pointer',padding:'4px 0'}}>▲</button>
+                <button onClick={()=>setM(p=>(p+5)%60)} style={{display:'block',width:'100%',background:'none',border:'none',color:TS,fontSize:22,cursor:'pointer',padding:'4px 0'}}>▲</button>
                 <div style={{color:TXT,fontSize:44,fontWeight:700,minWidth:70,textAlign:'center'}}>{pad(m)}</div>
-                <button onClick={()=>setM(p=>(p-5+60)%60)}
-                  style={{display:'block',width:'100%',background:'none',border:'none',color:TS,fontSize:22,cursor:'pointer',padding:'4px 0'}}>▼</button>
+                <button onClick={()=>setM(p=>(p-5+60)%60)} style={{display:'block',width:'100%',background:'none',border:'none',color:TS,fontSize:22,cursor:'pointer',padding:'4px 0'}}>▼</button>
                 <div style={{color:TT,fontSize:11,marginTop:4}}>Min</div>
               </div>
-              {/* AM/PM hint */}
               <div style={{textAlign:'center',marginBottom:10}}>
                 <div style={{color:GRN,fontSize:15,fontWeight:700}}>{h<12?'AM':'PM'}</div>
                 <div style={{color:TT,fontSize:11,marginTop:4}}>{h>12?h-12:h||12}:{pad(m)}</div>
@@ -150,23 +124,102 @@ const TimePicker=({onConfirm,onCancel})=>{
             </div>
           </div>
         )}
-
-        <button onClick={confirm}
-          style={{width:'100%',padding:16,background:GRN,border:'none',borderRadius:16,color:'#000',fontWeight:700,fontSize:16,cursor:'pointer',fontFamily:'inherit'}}>
-          Confirm Time →
-        </button>
+        <button onClick={confirm} style={{width:'100%',padding:16,background:GRN,border:'none',borderRadius:16,color:'#000',fontWeight:700,fontSize:16,cursor:'pointer',fontFamily:'inherit'}}>Confirm Time →</button>
       </div>
     </div>
   )
 }
 
+// ─── Edit Modal ────────────────────────────────────────────────────
+const EditModal=({entry,onSave,onDelete,onCancel})=>{
+  const [text,setText]=useState(entry.rawText)
+  const p=entry.parsed||{}
+  return(
+    <div style={{position:'fixed',inset:0,zIndex:500,display:'flex',flexDirection:'column',justifyContent:'flex-end'}}>
+      <div onClick={onCancel} style={{position:'absolute',inset:0,background:'rgba(0,0,0,0.7)',backdropFilter:'blur(4px)'}}/>
+      <div style={{position:'relative',background:CARD,borderRadius:'24px 24px 0 0',padding:'24px 20px 40px',zIndex:1}}>
+        <div style={{width:36,height:4,background:CARD3,borderRadius:2,margin:'0 auto 20px'}}/>
+        <div style={{color:TXT,fontSize:17,fontWeight:700,marginBottom:4}}>Edit Log Entry</div>
+        <div style={{color:TS,fontSize:12,marginBottom:16}}>
+          {new Date(entry.timestamp).toLocaleDateString('en',{weekday:'short',month:'short',day:'numeric'})} · {new Date(entry.timestamp).toLocaleTimeString('en',{hour:'2-digit',minute:'2-digit'})}
+        </div>
+
+        {/* Current parsed summary */}
+        {entry.type==='food'&&(
+          <div style={{background:CARD2,borderRadius:12,padding:'10px 14px',marginBottom:14}}>
+            <div style={{color:TS,fontSize:11,marginBottom:4}}>Logged as:</div>
+            <div style={{color:TXT,fontSize:14,fontWeight:600}}>{p.name}</div>
+            <div style={{color:TS,fontSize:12,marginTop:2}}>
+              {Math.round(p.calories||0)} cal · {Math.round(p.protein||0)}g protein · {Math.round(p.carbs||0)}g carbs · {Math.round(p.fat||0)}g fat
+            </div>
+          </div>
+        )}
+
+        <textarea value={text} onChange={e=>setText(e.target.value)} rows={3}
+          style={{width:'100%',background:CARD2,border:`1px solid ${CARD3}`,borderRadius:14,padding:'12px 14px',color:TXT,fontSize:16,resize:'none',fontFamily:'inherit',lineHeight:1.6,outline:'none',caretColor:GRN,boxSizing:'border-box',marginBottom:14}}/>
+
+        <div style={{display:'flex',gap:10}}>
+          <button onClick={()=>onDelete(entry.id)}
+            style={{flex:1,padding:14,background:`${RED}18`,border:`1px solid ${RED}44`,borderRadius:14,color:RED,fontWeight:700,fontSize:14,cursor:'pointer',fontFamily:'inherit'}}>
+            🗑️ Delete
+          </button>
+          <button onClick={()=>onSave(entry.id,text)}
+            style={{flex:2,padding:14,background:GRN,border:'none',borderRadius:14,color:'#000',fontWeight:700,fontSize:14,cursor:'pointer',fontFamily:'inherit'}}>
+            ✓ Re-analyze & Save
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Smart Tips based on deficiencies ─────────────────────────────
+const SmartTips=({deficiencies})=>{
+  if(!deficiencies||deficiencies.length===0) return(
+    <div style={{textAlign:'center',padding:'12px 0'}}>
+      <div style={{fontSize:36,marginBottom:8}}>🎉</div>
+      <div style={{color:GRN,fontWeight:600,fontSize:14}}>Great job! All nutrients on track today</div>
+    </div>
+  )
+  return(
+    <div>
+      {deficiencies.map((d,i)=>{
+        const tip=FOOD_TIPS[d.k]
+        if(!tip)return null
+        const urgency=d.pct<20?RED:d.pct<40?ORG:YEL
+        return(
+          <div key={d.k} style={{display:'flex',gap:12,marginBottom:i<deficiencies.length-1?12:0,padding:14,background:CARD2,borderRadius:14,border:`1px solid ${urgency}22`}}>
+            <div style={{flexShrink:0}}>
+              <div style={{width:40,height:40,borderRadius:20,background:`${urgency}18`,display:'flex',alignItems:'center',justifyContent:'center'}}>
+                <div style={{color:urgency,fontSize:11,fontWeight:700,textAlign:'center',lineHeight:1.2}}>{d.pct}%</div>
+              </div>
+            </div>
+            <div style={{flex:1}}>
+              <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:3}}>
+                <span style={{color:urgency,fontWeight:700,fontSize:13}}>{d.l} deficient</span>
+                <span style={{color:TT,fontSize:11}}>({fmtN(d.value,d.u)}/{d.goal}{d.u})</span>
+              </div>
+              <div style={{color:TS,fontSize:12,lineHeight:1.5,marginBottom:4}}>
+                💡 {tip.tip}
+              </div>
+              <div style={{color:TT,fontSize:11}}>
+                🥗 Eat: {tip.foods}
+              </div>
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 // ─── Entry Card ────────────────────────────────────────────────────
-const EntryCard=({entry,goals,expanded,onToggle})=>{
+const EntryCard=({entry,goals,expanded,onToggle,onEdit})=>{
   const p=entry.parsed||{}
   const conf={
     food:{icon:'🥗',color:RED,summary:`${Math.round(p.calories||0)} cal · ${Math.round(p.protein||0)}g protein`},
     exercise:{icon:'🏃',color:GRN,summary:`${p.duration||0} min · ${p.caloriesBurned||0} cal burned`},
-    weight:{icon:'⚖️',color:BLU,summary:`${p.weight||0} kg`},
+    weight:{icon:'⚖️',color:BLU,summary:`${(+p.weight||0).toFixed(2)} kg`},
   }[entry.type]||{icon:'📝',color:TS,summary:''}
   const topNutrs=entry.type==='food'
     ?NUTR.filter(n=>n.cat!=='macro'&&(p[n.k]||0)>0&&goals[n.k]>0)
@@ -174,26 +227,28 @@ const EntryCard=({entry,goals,expanded,onToggle})=>{
     :[]
   return(
     <div style={{marginBottom:12}}>
-      <div onClick={entry.type==='food'?onToggle:undefined} style={{cursor:entry.type==='food'?'pointer':'default'}}>
-        <div style={{display:'flex',gap:12,alignItems:'flex-start'}}>
-          <div style={{width:38,height:38,borderRadius:11,background:`${conf.color}18`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:18,flexShrink:0}}>{conf.icon}</div>
-          <div style={{flex:1}}>
-            <div style={{display:'flex',justifyContent:'space-between'}}>
-              <div style={{color:TXT,fontWeight:600,fontSize:14,flex:1,paddingRight:8}}>{p.name||p.activity||`Weight: ${p.weight}kg`}</div>
-              <div style={{color:TT,fontSize:11,flexShrink:0}}>{new Date(entry.timestamp).toLocaleTimeString('en',{hour:'2-digit',minute:'2-digit'})}</div>
+      <div style={{display:'flex',gap:12,alignItems:'flex-start'}}>
+        <div onClick={entry.type==='food'?onToggle:undefined} style={{width:38,height:38,borderRadius:11,background:`${conf.color}18`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:18,flexShrink:0,cursor:entry.type==='food'?'pointer':'default'}}>{conf.icon}</div>
+        <div style={{flex:1}} onClick={entry.type==='food'?onToggle:undefined} >
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
+            <div style={{color:TXT,fontWeight:600,fontSize:14,flex:1,paddingRight:8,cursor:entry.type==='food'?'pointer':'default'}}>{p.name||p.activity||`Weight: ${(+p.weight||0).toFixed(2)}kg`}</div>
+            <div style={{display:'flex',alignItems:'center',gap:8}}>
+              <div style={{color:TT,fontSize:11}}>{new Date(entry.timestamp).toLocaleTimeString('en',{hour:'2-digit',minute:'2-digit'})}</div>
+              <button onClick={e=>{e.stopPropagation();onEdit(entry)}}
+                style={{background:CARD2,border:'none',borderRadius:8,padding:'3px 8px',color:TS,fontSize:11,cursor:'pointer',fontFamily:'inherit'}}>✏️</button>
             </div>
-            <div style={{color:TS,fontSize:12,marginTop:2}}>{conf.summary}</div>
-            {entry.loadingOpinion&&<div style={{color:TT,fontSize:12,marginTop:6}}>⏳ Analyzing nutrition...</div>}
-            {entry.opinion&&<div style={{color:GRN,fontSize:12,marginTop:6,lineHeight:1.5,fontStyle:'italic'}}>💡 {entry.opinion}</div>}
-            {topNutrs.length>0&&(
-              <div style={{display:'flex',flexWrap:'wrap',gap:5,marginTop:8}}>
-                {topNutrs.map(n=>(
-                  <span key={n.k} style={{background:`${n.c}20`,color:n.c,fontSize:10,fontWeight:600,padding:'3px 8px',borderRadius:20}}>+{fmtN(p[n.k],n.u)} {n.l.split(' ').slice(-1)[0]}</span>
-                ))}
-                <span style={{background:CARD3,color:TS,fontSize:10,padding:'3px 8px',borderRadius:20}}>{expanded?'▲ less':'▼ all'}</span>
-              </div>
-            )}
           </div>
+          <div style={{color:TS,fontSize:12,marginTop:2}}>{conf.summary}</div>
+          {entry.loadingOpinion&&<div style={{color:TT,fontSize:12,marginTop:6}}>⏳ Analyzing nutrition...</div>}
+          {entry.opinion&&<div style={{color:GRN,fontSize:12,marginTop:6,lineHeight:1.5,fontStyle:'italic'}}>💡 {entry.opinion}</div>}
+          {topNutrs.length>0&&(
+            <div style={{display:'flex',flexWrap:'wrap',gap:5,marginTop:8}}>
+              {topNutrs.map(n=>(
+                <span key={n.k} style={{background:`${n.c}20`,color:n.c,fontSize:10,fontWeight:600,padding:'3px 8px',borderRadius:20}}>+{fmtN(p[n.k],n.u)} {n.l.split(' ').slice(-1)[0]}</span>
+              ))}
+              <span style={{background:CARD3,color:TS,fontSize:10,padding:'3px 8px',borderRadius:20}}>{expanded?'▲ less':'▼ all'}</span>
+            </div>
+          )}
         </div>
       </div>
       {expanded&&entry.type==='food'&&(
@@ -249,20 +304,24 @@ const Rings=({tots,burned,goals})=>{
   )
 }
 
-// ─── TODAY VIEW (top-level component, NOT inside App) ──────────────
-const TodayView=({logs,tots,burned,goals,latestWt,expandedId,setExpandedId,showAll,setShowAll,profile})=>{
+// ─── TODAY VIEW ────────────────────────────────────────────────────
+const TodayView=({logs,tots,burned,goals,latestWt,expandedId,setExpandedId,showAll,setShowAll,profile,onEdit})=>{
   const today=new Date().toISOString().split('T')[0]
-  const tl=logs.filter(l=>l.date===today)
+  // Most recent first
+  const tl=[...logs.filter(l=>l.date===today)].sort((a,b)=>new Date(b.timestamp)-new Date(a.timestamp))
   const vitamins=NUTR.filter(n=>n.cat==='vitamin')
   const minerals=NUTR.filter(n=>n.cat==='mineral')
   const hour=new Date().getHours()
   const greet=hour<12?'Good morning ☀️':hour<17?'Good afternoon 🌤️':'Good evening 🌙'
+  const deficiencies=getDeficiencies(tots,goals)
+
   return(
     <div style={{padding:'0 16px 100px'}}>
       <div style={{paddingTop:54,marginBottom:24}}>
         <div style={{color:TS,fontSize:12,fontWeight:600,letterSpacing:1.2,textTransform:'uppercase'}}>{new Date().toLocaleDateString('en',{weekday:'long',month:'long',day:'numeric'})}</div>
         <div style={{color:TXT,fontSize:28,fontWeight:700,marginTop:4}}>{greet}{profile?.name?`, ${profile.name.split(' ')[0]}`:''}</div>
       </div>
+
       <Card>
         <CardHead t="Activity Rings" s="Move · Exercise · Protein"/>
         <Rings tots={tots} burned={burned} goals={goals}/>
@@ -275,43 +334,56 @@ const TodayView=({logs,tots,burned,goals,latestWt,expandedId,setExpandedId,showA
           ))}
         </div>
       </Card>
+
+      {/* Smart Tips — based on actual deficiencies */}
+      <Card>
+        <CardHead t="🎯 Today's Priority Tips" s={deficiencies.length>0?`${deficiencies.length} nutrients need attention`:'All nutrients on track'}/>
+        <SmartTips deficiencies={deficiencies}/>
+      </Card>
+
       <Card>
         <CardHead t="Macronutrients"/>
         {NUTR.filter(n=>n.cat==='macro').map(n=><PBar key={n.k} label={n.l} value={tots[n.k]} max={goals[n.k]||1} color={n.c} unit={n.u}/>)}
       </Card>
+
       <Card>
-        <CardHead t="Vitamins" s={profile?`Personalized for ${profile.age}yr ${profile.gender}`:''}/>
+        <CardHead t="Vitamins" s={profile?`Based on ICMR 2020 · ${profile.age}yr ${profile.gender}`:''}/>
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
           {(showAll?vitamins:vitamins.slice(0,6)).map(n=><MicroTile key={n.k} n={n} value={tots[n.k]} goal={goals[n.k]||1}/>)}
         </div>
         <button onClick={()=>setShowAll(!showAll)} style={{width:'100%',marginTop:10,padding:8,background:CARD2,border:'none',borderRadius:10,color:TS,fontSize:13,cursor:'pointer',fontFamily:'inherit'}}>{showAll?'▲ Show Less':'▼ Show All Vitamins'}</button>
       </Card>
+
       <Card>
-        <CardHead t="Minerals"/>
+        <CardHead t="Minerals" s="Vegetarian-adjusted requirements"/>
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
           {(showAll?minerals:minerals.slice(0,6)).map(n=><MicroTile key={n.k} n={n} value={tots[n.k]} goal={goals[n.k]||1}/>)}
         </div>
         <button onClick={()=>setShowAll(!showAll)} style={{width:'100%',marginTop:10,padding:8,background:CARD2,border:'none',borderRadius:10,color:TS,fontSize:13,cursor:'pointer',fontFamily:'inherit'}}>{showAll?'▲ Show Less':'▼ Show All Minerals'}</button>
       </Card>
+
       <Card>
-        <CardHead t="Today's Timeline" s="Tap any meal to see full nutrient breakdown"/>
+        <CardHead t="Today's Timeline" s="Most recent first · Tap ✏️ to edit or delete"/>
         {tl.length===0?(
           <div style={{textAlign:'center',padding:'16px 0'}}>
             <div style={{fontSize:44,marginBottom:10}}>🌱</div>
             <div style={{color:TS,fontSize:14}}>Start by logging your first meal!</div>
           </div>
-        ):[...tl].sort((a,b)=>new Date(a.timestamp)-new Date(b.timestamp)).map((item,i,arr)=>(
+        ):tl.map((item,i,arr)=>(
           <div key={item.id}>
-            <EntryCard entry={item} goals={goals} expanded={expandedId===item.id} onToggle={()=>setExpandedId(expandedId===item.id?null:item.id)}/>
+            <EntryCard entry={item} goals={goals} expanded={expandedId===item.id}
+              onToggle={()=>setExpandedId(expandedId===item.id?null:item.id)}
+              onEdit={onEdit}/>
             {i<arr.length-1&&<div style={{height:1,background:CARD3,margin:'4px 0 12px 50px'}}/>}
           </div>
         ))}
       </Card>
+
       {latestWt&&(
         <Card>
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
             <div><div style={{color:TXT,fontSize:15,fontWeight:700}}>Current Weight</div><div style={{color:TS,fontSize:12,marginTop:2}}>Last recorded</div></div>
-            <div><span style={{color:BLU,fontSize:44,fontWeight:700}}>{latestWt}</span><span style={{color:TS,fontSize:22}}> kg</span></div>
+            <div><span style={{color:BLU,fontSize:44,fontWeight:700}}>{(+latestWt).toFixed(2)}</span><span style={{color:TS,fontSize:22}}> kg</span></div>
           </div>
         </Card>
       )}
@@ -319,11 +391,11 @@ const TodayView=({logs,tots,burned,goals,latestWt,expandedId,setExpandedId,showA
   )
 }
 
-// ─── LOG VIEW (top-level component — fixes keyboard bug) ───────────
+// ─── LOG VIEW ──────────────────────────────────────────────────────
 const LOG_EX={
   food:['Had poha and masala chai for breakfast','Dal rice sabzi with 2 roti for lunch','Evening snack: 20g almonds and one banana','Dinner: palak paneer, 2 chapati, bowl of curd'],
   exercise:['30 minute morning yoga session','Jogged 5km in about 35 minutes','45 min strength training at gym','20-minute brisk evening walk'],
-  weight:['My weight this morning is 70 kg','Weighed 68.5 kg today after workout','Evening weight: 71.2 kg'],
+  weight:['My weight this morning is 70.5 kg','Weighed 68.25 kg today','Evening weight: 71.00 kg'],
 }
 
 const LogView=({logs,onLog,busy})=>{
@@ -332,10 +404,11 @@ const LogView=({logs,onLog,busy})=>{
   const [showTimePicker,setShowTimePicker]=useState(false)
   const taRef=useRef(null)
   const today=new Date().toISOString().split('T')[0]
+  // Most recent first
+  const recentLogs=[...logs].sort((a,b)=>new Date(b.timestamp)-new Date(a.timestamp))
 
   const handleLogPress=()=>{
     if(!inp.trim()||busy)return
-    // blur keyboard first, then show time picker
     taRef.current?.blur()
     setTimeout(()=>setShowTimePicker(true),100)
   }
@@ -351,7 +424,6 @@ const LogView=({logs,onLog,busy})=>{
         <div style={{color:TS,fontSize:14,marginTop:4}}>Tell me what you ate, did, or weigh</div>
       </div>
 
-      {/* Type switcher */}
       <div style={{display:'flex',background:CARD2,borderRadius:12,padding:4,marginBottom:16,gap:4}}>
         {[['food','🥗','Food'],['exercise','🏃','Exercise'],['weight','⚖️','Weight']].map(([id,ic,lb])=>(
           <button key={id} onClick={()=>setItype(id)}
@@ -361,22 +433,12 @@ const LogView=({logs,onLog,busy})=>{
         ))}
       </div>
 
-      {/* Input card */}
       <Card>
-        <textarea
-          ref={taRef}
-          value={inp}
-          onChange={e=>setInp(e.target.value)}
-          rows={4}
-          placeholder={{
-            food:'"Had 2 chapati with dal makhani and lassi for lunch"',
-            exercise:'"Did 30 min morning yoga"',
-            weight:'"My weight is 72.5 kg"'
-          }[itype]}
-          style={{width:'100%',background:'transparent',border:'none',outline:'none',color:TXT,fontSize:16,resize:'none',fontFamily:'inherit',lineHeight:1.6,boxSizing:'border-box',caretColor:GRN}}
-        />
+        <textarea ref={taRef} value={inp} onChange={e=>setInp(e.target.value)} rows={4}
+          placeholder={{food:'"Had 2 chapati with dal makhani and lassi for lunch"',exercise:'"Did 30 min morning yoga"',weight:'"My weight is 72.50 kg"'}[itype]}
+          style={{width:'100%',background:'transparent',border:'none',outline:'none',color:TXT,fontSize:16,resize:'none',fontFamily:'inherit',lineHeight:1.6,boxSizing:'border-box',caretColor:GRN}}/>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:12,paddingTop:12,borderTop:`1px solid ${CARD3}`}}>
-          <div style={{color:TS,fontSize:12}}>{itype==='food'?'🤖 AI analyzes 30 nutrients + gives insight':'🤖 AI calculates your data'}</div>
+          <div style={{color:TS,fontSize:12}}>{itype==='food'?'🤖 AI analyzes 30 nutrients + insight':itype==='weight'?'⚖️ Format: 00.00 kg':'🤖 AI calculates your data'}</div>
           <button onClick={handleLogPress} disabled={busy||!inp.trim()}
             style={{background:busy||!inp.trim()?CARD3:GRN,color:busy||!inp.trim()?TS:'#000',border:'none',borderRadius:20,padding:'9px 22px',fontWeight:700,fontSize:14,cursor:busy||!inp.trim()?'not-allowed':'pointer',fontFamily:'inherit',transition:'all .2s'}}>
             {busy?'⏳ Analyzing…':'Log It →'}
@@ -384,7 +446,6 @@ const LogView=({logs,onLog,busy})=>{
         </div>
       </Card>
 
-      {/* Examples */}
       <Card>
         <div style={{color:TS,fontSize:11,fontWeight:700,letterSpacing:1,textTransform:'uppercase',marginBottom:12}}>Try These</div>
         {LOG_EX[itype].map((ex,i)=>(
@@ -395,24 +456,23 @@ const LogView=({logs,onLog,busy})=>{
         ))}
       </Card>
 
-      {/* Recent history */}
-      {logs.length>0&&(
+      {recentLogs.length>0&&(
         <Card>
-          <div style={{color:TS,fontSize:11,fontWeight:700,letterSpacing:1,textTransform:'uppercase',marginBottom:12}}>Recent</div>
-          {logs.slice(0,5).map((log,i)=>{
+          <div style={{color:TS,fontSize:11,fontWeight:700,letterSpacing:1,textTransform:'uppercase',marginBottom:12}}>Recent — Most Recent First</div>
+          {recentLogs.slice(0,6).map((log,i)=>{
             const p=log.parsed||{}
             return(
-              <div key={log.id} style={{display:'flex',gap:12,alignItems:'flex-start',paddingBottom:i<4?12:0,marginBottom:i<4?12:0,borderBottom:i<4?`1px solid ${CARD3}`:'none'}}>
+              <div key={log.id} style={{display:'flex',gap:12,alignItems:'flex-start',paddingBottom:i<5?12:0,marginBottom:i<5?12:0,borderBottom:i<5?`1px solid ${CARD3}`:'none'}}>
                 <span style={{fontSize:20,marginTop:1}}>{log.type==='food'?'🥗':log.type==='exercise'?'🏃':'⚖️'}</span>
                 <div style={{flex:1,minWidth:0}}>
                   <div style={{color:TXT,fontSize:13,fontWeight:500,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{log.rawText}</div>
                   <div style={{color:TS,fontSize:11,marginTop:3}}>
                     {new Date(log.timestamp).toLocaleTimeString('en',{hour:'2-digit',minute:'2-digit'})} · {new Date(log.date+'T12:00:00').toLocaleDateString('en',{month:'short',day:'numeric'})}
-                    {log.type==='food'&&` · ${Math.round(p.calories||0)} cal`}
+                    {log.type==='food'&&` · ${Math.round(p.calories||0)} cal · ${Math.round(p.protein||0)}g prot`}
                     {log.type==='exercise'&&` · ${p.duration||0}min`}
-                    {log.type==='weight'&&` · ${p.weight}kg`}
+                    {log.type==='weight'&&` · ${(+p.weight||0).toFixed(2)} kg`}
                   </div>
-                  {log.opinion&&<div style={{color:GRN,fontSize:11,marginTop:4,lineHeight:1.4,fontStyle:'italic'}}>💡 {log.opinion}</div>}
+                  {log.opinion&&<div style={{color:GRN,fontSize:11,marginTop:3,lineHeight:1.4,fontStyle:'italic'}}>💡 {log.opinion}</div>}
                 </div>
               </div>
             )
@@ -420,35 +480,40 @@ const LogView=({logs,onLog,busy})=>{
         </Card>
       )}
 
-      {/* Time picker modal */}
       {showTimePicker&&<TimePicker onConfirm={handleTimeConfirm} onCancel={()=>setShowTimePicker(false)}/>}
     </div>
   )
 }
 
 // ─── REPORTS VIEW ──────────────────────────────────────────────────
-const ReportsView=({week,goals,latestWt})=>{
+const ReportsView=({week,goals,latestWt,logs})=>{
   const wL=week.filter(d=>d.calories>0)
   const wP=week.filter(d=>d.protein>0)
   const avgCals=wL.length?Math.round(wL.reduce((s,d)=>s+d.calories,0)/wL.length):0
   const avgProt=wP.length?Math.round(wP.reduce((s,d)=>s+d.protein,0)/wP.length):0
+
+  // Weight history
+  const wtLogs=[...logs.filter(l=>l.type==='weight')].sort((a,b)=>new Date(b.timestamp)-new Date(a.timestamp)).slice(0,5)
+
   return(
     <div style={{padding:'0 16px 100px'}}>
       <div style={{paddingTop:54,marginBottom:24}}>
         <div style={{color:TXT,fontSize:30,fontWeight:700}}>Reports</div>
         <div style={{color:TS,fontSize:14,marginTop:4}}>Weekly insights & trends</div>
       </div>
+
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:14}}>
         {[['🔥','Avg Calories',wL.length?avgCals:'—',wL.length?'kcal':'',RED],
           ['💪','Avg Protein',wP.length?avgProt:'—',wP.length?'g':'',PUR],
           ['📅','Days Logged',wL.length,'/ 7',GRN],
-          ['⚖️','Weight',latestWt||'—',latestWt?'kg':'',BLU]].map(([ic,l,v,u,c])=>(
+          ['⚖️','Weight',latestWt?(+latestWt).toFixed(2):'—',latestWt?'kg':'',BLU]].map(([ic,l,v,u,c])=>(
           <div key={l} style={{background:CARD,borderRadius:18,padding:16}}>
             <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:8}}><span style={{fontSize:16}}>{ic}</span><span style={{color:TS,fontSize:12}}>{l}</span></div>
             <div style={{color:c,fontSize:26,fontWeight:700,lineHeight:1}}>{v}<span style={{fontSize:13,color:TS,fontWeight:400}}> {u}</span></div>
           </div>
         ))}
       </div>
+
       <Card>
         <CardHead t="Calories This Week" s={`Goal: ${goals.calories||2000} kcal/day`}/>
         <ResponsiveContainer width="100%" height={160}>
@@ -459,6 +524,7 @@ const ReportsView=({week,goals,latestWt})=>{
           </BarChart>
         </ResponsiveContainer>
       </Card>
+
       <Card>
         <CardHead t="Protein Trend" s={`Goal: ${goals.protein||60}g/day`}/>
         <ResponsiveContainer width="100%" height={140}>
@@ -470,19 +536,19 @@ const ReportsView=({week,goals,latestWt})=>{
           </AreaChart>
         </ResponsiveContainer>
       </Card>
-      <Card>
-        <CardHead t="🌱 Vegetarian Nutrition Tips"/>
-        {[['💪','Complete Protein Daily','Combine dal + rice or roti + dal for complete amino acids. Add paneer, tofu, or legumes daily.'],
-          ['🩸','Boost Iron Absorption','Eat iron-rich foods (spinach, lentils) with Vitamin C (lemon, amla) — increases absorption by 3×.'],
-          ['💊','B12 Alert','Nearly absent in plant foods. Take a B12 supplement and check blood levels every 6 months.'],
-          ['☀️','Vitamin D','15–20 min morning sunlight daily. Fortified milk or sun-exposed mushrooms also help.'],
-          ['🥜','Zinc Sources','Pumpkin seeds, cashews, chickpeas. Soak legumes to improve zinc absorption.']].map(([ic,t,d])=>(
-          <div key={t} style={{display:'flex',gap:12,marginBottom:10,padding:14,background:CARD2,borderRadius:14}}>
-            <span style={{fontSize:20,flexShrink:0}}>{ic}</span>
-            <div><div style={{color:TXT,fontWeight:600,fontSize:14}}>{t}</div><div style={{color:TS,fontSize:12,marginTop:3,lineHeight:1.5}}>{d}</div></div>
-          </div>
-        ))}
-      </Card>
+
+      {/* Weight history */}
+      {wtLogs.length>0&&(
+        <Card>
+          <CardHead t="⚖️ Weight History" s="Most recent first"/>
+          {wtLogs.map((log,i)=>(
+            <div key={log.id} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'10px 0',borderBottom:i<wtLogs.length-1?`1px solid ${CARD3}`:'none'}}>
+              <div style={{color:TS,fontSize:13}}>{new Date(log.date+'T12:00:00').toLocaleDateString('en',{weekday:'short',month:'short',day:'numeric'})}</div>
+              <div style={{color:BLU,fontWeight:700,fontSize:18}}>{(+log.parsed?.weight||0).toFixed(2)} <span style={{color:TS,fontWeight:400,fontSize:13}}>kg</span></div>
+            </div>
+          ))}
+        </Card>
+      )}
     </div>
   )
 }
@@ -492,7 +558,7 @@ const ProfileView=({profile,goals,onEdit,onClearLogs})=>(
   <div style={{padding:'0 16px 100px'}}>
     <div style={{paddingTop:54,marginBottom:24}}>
       <div style={{color:TXT,fontSize:30,fontWeight:700}}>Profile</div>
-      <div style={{color:TS,fontSize:14,marginTop:4}}>Your personalized goals</div>
+      <div style={{color:TS,fontSize:14,marginTop:4}}>Your personalized goals · ICMR 2020 based</div>
     </div>
     <Card>
       <div style={{display:'flex',alignItems:'center',gap:16,marginBottom:16}}>
@@ -504,18 +570,18 @@ const ProfileView=({profile,goals,onEdit,onClearLogs})=>(
         </div>
       </div>
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginBottom:12}}>
-        {[['BMR',`${goals.bmr||0}`,TS],['TDEE',`${goals.tdee||0}`,GRN],['Target',`${goals.calories||0}`,RED]].map(([l,v,c])=>(
+        {[['BMR',`${goals.bmr||0}`,TS,'Base rate'],['TDEE',`${goals.tdee||0}`,GRN,'With activity'],['Target',`${goals.calories||0}`,RED,'Your goal']].map(([l,v,c,d])=>(
           <div key={l} style={{background:CARD2,borderRadius:12,padding:'10px 12px',textAlign:'center'}}>
             <div style={{color:TT,fontSize:10,fontWeight:700}}>{l}</div>
             <div style={{color:c,fontWeight:700,fontSize:17,marginTop:2}}>{v}</div>
-            <div style={{color:TT,fontSize:10}}>kcal/d</div>
+            <div style={{color:TT,fontSize:10}}>{d}</div>
           </div>
         ))}
       </div>
       <button onClick={onEdit} style={{width:'100%',padding:12,background:CARD2,border:`1px solid ${CARD3}`,borderRadius:14,color:TS,fontWeight:600,fontSize:14,cursor:'pointer',fontFamily:'inherit'}}>✏️ Edit Profile & Recalculate Goals</button>
     </Card>
     <Card>
-      <CardHead t="All 30 Daily Goals" s="Personalized for your age, gender & lifestyle"/>
+      <CardHead t="All 30 Daily Goals" s="Research-based · ICMR 2020 + NIH DRI · Vegetarian-adjusted"/>
       {['macro','vitamin','mineral'].map(cat=>(
         <div key={cat} style={{marginBottom:16}}>
           <div style={{color:TS,fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:.8,marginBottom:8}}>{cat==='macro'?'Macronutrients':cat==='vitamin'?'Vitamins':'Minerals'}</div>
@@ -546,7 +612,7 @@ const SetupScreen=({draft,setDraft,onSave,onCancel,hasProfile})=>{
         <div style={{paddingTop:60,marginBottom:32,textAlign:'center'}}>
           <div style={{fontSize:52,marginBottom:12}}>🌿</div>
           <div style={{fontSize:28,fontWeight:700}}>Personalize your goals</div>
-          <div style={{fontSize:15,color:TS,marginTop:6}}>We calculate your exact daily needs for all 30 nutrients</div>
+          <div style={{fontSize:15,color:TS,marginTop:6}}>ICMR 2020 + NIH research-based nutrition goals</div>
         </div>
         <Card><CardHead t="What's your name?" s="Optional"/>
           <input value={draft.name} onChange={e=>setDraft(p=>({...p,name:e.target.value}))} placeholder="Your name"
@@ -564,7 +630,7 @@ const SetupScreen=({draft,setDraft,onSave,onCancel,hasProfile})=>{
         </Card>
         <Card><CardHead t="Body Measurements"/>
           <Stepper label="Age" value={draft.age} onChange={v=>setDraft(p=>({...p,age:v}))} min={10} max={100} unit=" yrs"/>
-          <Stepper label="Weight" value={draft.weight} onChange={v=>setDraft(p=>({...p,weight:v}))} min={30} max={200} unit=" kg"/>
+          <Stepper label="Weight" value={draft.weight} onChange={v=>setDraft(p=>({...p,weight:v}))} min={30} max={200} step={0.5} unit=" kg"/>
           <Stepper label="Height" value={draft.height} onChange={v=>setDraft(p=>({...p,height:v}))} min={100} max={250} unit=" cm"/>
           <div style={{marginTop:8,padding:'10px 14px',background:CARD2,borderRadius:10}}>
             <span style={{color:TS,fontSize:12}}>BMI: </span><span style={{color:GRN,fontWeight:700}}>{bmi}</span>
@@ -572,8 +638,10 @@ const SetupScreen=({draft,setDraft,onSave,onCancel,hasProfile})=>{
           </div>
         </Card>
         <Card><CardHead t="Daily Activity Level"/>
-          {[['sedentary','🛋️','Sedentary','Desk job, minimal exercise'],['light','🚶','Lightly Active','Light exercise 1–3 days/week'],
-            ['moderate','🏊','Moderately Active','Moderate exercise 3–5 days/week'],['active','🏋️','Very Active','Hard exercise 6–7 days/week'],
+          {[['sedentary','🛋️','Sedentary','Desk job, minimal exercise'],
+            ['light','🚶','Lightly Active','Light exercise 1–3 days/week'],
+            ['moderate','🏊','Moderately Active','Moderate exercise 3–5 days/week'],
+            ['active','🏋️','Very Active','Hard exercise 6–7 days/week'],
             ['extra','⚡','Extra Active','Physical job + daily exercise']].map(([id,ic,lb,desc])=>(
             <button key={id} onClick={()=>setDraft(p=>({...p,activity:id}))}
               style={{display:'flex',alignItems:'center',gap:12,width:'100%',background:draft.activity===id?`${GRN}15`:CARD2,border:`1.5px solid ${draft.activity===id?GRN:CARD3}`,borderRadius:14,padding:'11px 14px',marginBottom:8,cursor:'pointer',fontFamily:'inherit',textAlign:'left'}}>
@@ -592,17 +660,19 @@ const SetupScreen=({draft,setDraft,onSave,onCancel,hasProfile})=>{
             ))}
           </div>
         </Card>
-        <Card><CardHead t="Your Personalized Daily Needs"/>
+        <Card><CardHead t="Your Research-Based Daily Needs"/>
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
-            {[['BMR',`${pg.bmr} kcal`,TS],['TDEE',`${pg.tdee} kcal`,GRN],['Calorie Goal',`${pg.calories} kcal`,RED],['Protein',`${pg.protein}g`,PUR],
-              ['Iron',`${pg.iron}mg`,RED],['Calcium',`${pg.calcium}mg`,CYN],['B12',`${pg.vitB12}mcg`,PUR],['Water',`${pg.water}ml`,BLU]].map(([l,v,c])=>(
+            {[['BMR',`${pg.bmr} kcal`,TS],['TDEE',`${pg.tdee} kcal`,GRN],
+              ['Calorie Goal',`${pg.calories} kcal`,RED],['Protein',`${pg.protein}g`,PUR],
+              ['Iron',`${pg.iron}mg`,RED],['Calcium',`${pg.calcium}mg`,CYN],
+              ['B12',`${pg.vitB12}mcg`,PUR],['Zinc',`${pg.zinc}mg`,BLU]].map(([l,v,c])=>(
               <div key={l} style={{background:CARD2,borderRadius:10,padding:'10px 12px'}}>
                 <div style={{color:TS,fontSize:11}}>{l}</div>
                 <div style={{color:c,fontWeight:700,fontSize:15,marginTop:2}}>{v}</div>
               </div>
             ))}
           </div>
-          <div style={{color:TT,fontSize:11,textAlign:'center',marginTop:10}}>{ACT_LABELS[draft.activity]} · {GOAL_LABELS[draft.goal]}</div>
+          <div style={{color:TT,fontSize:11,textAlign:'center',marginTop:10}}>Sources: ICMR 2020 · NIH DRI · WHO · NIN India</div>
           <button onClick={onSave} style={{width:'100%',padding:16,background:GRN,border:'none',borderRadius:16,color:'#000',fontWeight:700,fontSize:17,cursor:'pointer',fontFamily:'inherit',marginTop:16}}>Start Tracking →</button>
           {hasProfile&&<button onClick={onCancel} style={{width:'100%',padding:12,background:'transparent',border:'none',borderRadius:16,color:TS,fontSize:14,cursor:'pointer',fontFamily:'inherit',marginTop:8}}>Cancel</button>}
         </Card>
@@ -612,7 +682,7 @@ const SetupScreen=({draft,setDraft,onSave,onCancel,hasProfile})=>{
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// MAIN APP — only manages state, no UI components defined here
+// MAIN APP
 // ═══════════════════════════════════════════════════════════════════
 export default function App(){
   const [tab,setTab]=useState('today')
@@ -625,6 +695,7 @@ export default function App(){
   const [notif,setNotif]=useState(null)
   const [expandedId,setExpandedId]=useState(null)
   const [showAll,setShowAll]=useState(false)
+  const [editEntry,setEditEntry]=useState(null)
 
   useEffect(()=>{
     const p=store.get('profile')
@@ -634,7 +705,7 @@ export default function App(){
     if(l)setLogs(l)
   },[])
 
-  const toast=useCallback((msg,err=false)=>{setNotif({msg,err});setTimeout(()=>setNotif(null),3000)},[])
+  const toast=useCallback((msg,err=false)=>{setNotif({msg,err});setTimeout(()=>setNotif(null),3200)},[])
 
   const saveProfile=useCallback(()=>{
     const g=calcGoals(draft)
@@ -660,26 +731,26 @@ export default function App(){
       protein:Math.round(df.reduce((s,l)=>s+(l.parsed?.protein||0),0))}
   })
 
-  // Main log handler — called from LogView with chosen time
   const handleLog=useCallback(async(inp,itype,chosenTime,clearInput)=>{
     if(busy)return
     setBusy(true)
     const profStr=profile?`${profile.age}yr ${profile.gender}, ${profile.weight}kg, ${profile.height}cm, ${ACT_LABELS[profile.activity]}, goal: ${GOAL_LABELS[profile.goal]}`:'unknown'
     try{
       let parsed
-      if(itype==='food')         parsed=await parseFoodEntry(inp,profStr)
-      else if(itype==='exercise')parsed=await parseExerciseEntry(inp)
-      else                       parsed=await parseWeightEntry(inp)
+      if(itype==='food') parsed=await parseFoodEntry(inp,profStr)
+      else if(itype==='exercise') parsed=await parseExerciseEntry(inp)
+      else parsed=await parseWeightEntry(inp)
+
+      // Weight: ensure 2 decimal format
+      if(itype==='weight'&&parsed.weight) parsed.weight=+(+parsed.weight).toFixed(2)
 
       const entryId=Date.now()
       const entryDate=chosenTime.toISOString().split('T')[0]
       const entry={id:entryId,type:itype,rawText:inp,timestamp:chosenTime.toISOString(),date:entryDate,parsed,opinion:null,loadingOpinion:itype==='food'&&!!profile}
       const nl=[entry,...logs]
-      setLogs(nl);store.set('logs',nl)
-      clearInput()
+      setLogs(nl);store.set('logs',nl);clearInput()
       setBusy(false)
-      const lbl=itype==='food'?(parsed.name||'Food'):itype==='exercise'?parsed.activity:`${parsed.weight} kg`
-      toast(`✓ ${lbl} logged at ${chosenTime.toLocaleTimeString('en',{hour:'2-digit',minute:'2-digit'})}!`)
+      toast(`✓ ${itype==='food'?(parsed.name||'Food'):itype==='exercise'?parsed.activity:`${(+parsed.weight).toFixed(2)} kg`} logged!`)
 
       if(itype==='food'&&profile){
         const totsAfter=NUTR.reduce((a,n)=>({...a,[n.k]:(tots[n.k]||0)+(parsed[n.k]||0)}),{})
@@ -695,10 +766,53 @@ export default function App(){
       }
     }catch(e){
       setBusy(false)
-      const msg = e.message || 'Unknown error — try again'
-      toast(msg,true)
+      toast(e.message||'Could not parse — try again',true)
     }
   },[busy,logs,tots,goals,profile,toast])
+
+  // Delete a log entry
+  const handleDelete=useCallback((id)=>{
+    if(!window.confirm('Delete this entry?'))return
+    const updated=logs.filter(l=>l.id!==id)
+    setLogs(updated);store.set('logs',updated)
+    setEditEntry(null)
+    toast('Entry deleted')
+  },[logs,toast])
+
+  // Re-analyze and save edited entry
+  const handleEditSave=useCallback(async(id,newText)=>{
+    const entry=logs.find(l=>l.id===id)
+    if(!entry)return
+    setEditEntry(null)
+    setBusy(true)
+    const profStr=profile?`${profile.age}yr ${profile.gender}, ${profile.weight}kg, ${ACT_LABELS[profile.activity]}, goal: ${GOAL_LABELS[profile.goal]}`:'unknown'
+    try{
+      let parsed
+      if(entry.type==='food') parsed=await parseFoodEntry(newText,profStr)
+      else if(entry.type==='exercise') parsed=await parseExerciseEntry(newText)
+      else { parsed=await parseWeightEntry(newText); parsed.weight=+(+parsed.weight).toFixed(2) }
+
+      const updated=logs.map(l=>l.id===id?{...l,rawText:newText,parsed,opinion:null,loadingOpinion:entry.type==='food'&&!!profile}:l)
+      setLogs(updated);store.set('logs',updated)
+      setBusy(false)
+      toast('✓ Entry updated!')
+
+      if(entry.type==='food'&&profile){
+        try{
+          const opinion=await getMealOpinion(parsed,profile,tots,goals)
+          setLogs(prev=>{
+            const u2=prev.map(l=>l.id===id?{...l,opinion:opinion.trim(),loadingOpinion:false}:l)
+            store.set('logs',u2);return u2
+          })
+        }catch{
+          setLogs(prev=>prev.map(l=>l.id===id?{...l,loadingOpinion:false}:l))
+        }
+      }
+    }catch(e){
+      setBusy(false)
+      toast(e.message||'Could not update',true)
+    }
+  },[logs,profile,tots,goals,toast])
 
   const clearLogs=useCallback(()=>{
     if(window.confirm('Delete all logs? Profile is kept.'))
@@ -716,12 +830,14 @@ export default function App(){
           {notif.msg}
         </div>
       )}
+
       <div style={{height:'100dvh',overflowY:'auto',scrollbarWidth:'none'}}>
-        {tab==='today'&&<TodayView logs={logs} tots={tots} burned={burned} goals={goals} latestWt={latestWt} expandedId={expandedId} setExpandedId={setExpandedId} showAll={showAll} setShowAll={setShowAll} profile={profile}/>}
+        {tab==='today'&&<TodayView logs={logs} tots={tots} burned={burned} goals={goals} latestWt={latestWt} expandedId={expandedId} setExpandedId={setExpandedId} showAll={showAll} setShowAll={setShowAll} profile={profile} onEdit={setEditEntry}/>}
         {tab==='log'&&<LogView logs={logs} onLog={handleLog} busy={busy}/>}
-        {tab==='reports'&&<ReportsView week={week} goals={goals} latestWt={latestWt}/>}
+        {tab==='reports'&&<ReportsView week={week} goals={goals} latestWt={latestWt} logs={logs}/>}
         {tab==='profile'&&<ProfileView profile={profile} goals={goals} onEdit={()=>setShowSetup(true)} onClearLogs={clearLogs}/>}
       </div>
+
       <div style={{position:'fixed',bottom:0,left:'50%',transform:'translateX(-50%)',width:'100%',maxWidth:430,background:'rgba(14,14,16,0.92)',backdropFilter:'blur(24px)',WebkitBackdropFilter:'blur(24px)',borderTop:'0.5px solid rgba(255,255,255,0.1)',display:'flex',padding:'10px 0 22px',zIndex:100}}>
         {TABS.map(([id,ic,lb])=>(
           <button key={id} onClick={()=>setTab(id)}
@@ -731,6 +847,8 @@ export default function App(){
           </button>
         ))}
       </div>
+
+      {editEntry&&<EditModal entry={editEntry} onSave={handleEditSave} onDelete={handleDelete} onCancel={()=>setEditEntry(null)}/>}
     </div>
   )
 }
