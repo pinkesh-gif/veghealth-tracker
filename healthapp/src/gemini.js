@@ -7,7 +7,7 @@ async function askAI(prompt) {
   const API_KEY = import.meta.env.VITE_OPENROUTER_API_KEY
 
   if (!API_KEY || API_KEY === 'undefined') {
-    throw new Error('OpenRouter API key not found — check VITE_OPENROUTER_API_KEY in Vercel')
+    throw new Error('key missing')
   }
 
   const res = await fetch(BASE, {
